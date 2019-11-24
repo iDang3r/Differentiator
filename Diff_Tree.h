@@ -15,6 +15,27 @@ const char close_bracket = ')';
 const double e  = 2.718282;
 const double pi = 3.141593;
 
+namespace type {
+    enum {
+        num    = 0,
+        func   = 1,
+        var    = 2,
+        constt = 3,
+    };
+}
+
+#define ADD(l, r) create(1, add_, l, r)
+#define SUB(l, r) create(1, sub_, l, r)
+#define MUL(l, r) create(1, mul_, l, r)
+#define DIV(l, r) create(1, div_, l, r)
+#define LOG(l, r) create(1, log_, l, r)
+#define POW(l, r) create(1, pow_, l, r)
+#define SIN(x)    create(1, sin_, nullptr, x)
+#define COS(x)    create(1, cos_, nullptr, x)
+#define LN(x)     create(1, ln_, nullptr, x)
+#define SQRT(x)   create(1, sqrt_, nullptr, x)
+//#define NUM(x)    create(var, x)
+
 enum functions {
     add_  = 1,
     sub_  = 2,
@@ -28,6 +49,35 @@ enum functions {
     cos_  = 21,  // mono
     ln_   = 22,
 };
+
+namespace easy {
+    int size = 5;
+
+    const char* content[] {
+        "Это же просто смешно: ",
+        "Даже Дане с Андреем понятно: ",
+        "Моя младшая сестра такое с закрытыми глазами проворачивает: ",
+        "Такое даже на заборах писать неприлично: ",
+        "Извините, а когда думать начинать? "
+    };
+
+}
+
+namespace hard {
+    int size = 9;
+
+    const char* content[] {
+        "Такие преобразования должны запретить, они разрушают кору головного мозга: ",
+        "Ну, Андрей такое точно не потянет: ",
+        "Илон Маск для такого целую компанию создал: ",
+        "Я звонил Турсуной Закировой, победительнице битвы экстрасенсов 2005, она подсказала такое преобразование равно: ",
+        "Это я своровал у Wolfram'a, ибо нерешаемо обычным разумом: ",
+        "Уму не постижимо! Это же: ",
+        "Даже не представляю как такое объяснить, чёртова магия: ",
+        "Разложил карты рядом со свечками и мантрами, получил это: ",
+        "Такое не разбирают даже в мат. группе! Шок контент, смотреть без СМС: "
+    };
+}
 
 union uni_data {
     double value_;
@@ -43,6 +93,12 @@ union uni_data {
 struct Diff_Tree : Tree<uni_data> {
 
     FILE* TeX = nullptr;
+
+    char diff_by = 'x';
+
+    bool stop_tex = false;
+
+    node<uni_data>* print_tex = nullptr;
 
     // METHODS
 
@@ -60,7 +116,7 @@ struct Diff_Tree : Tree<uni_data> {
         fprintf(TeX, "\\usepackage[utf8]{inputenc}\n");
         fprintf(TeX, "\\usepackage[english,russian]{babel}\n");
         fprintf(TeX, "\\usepackage[14pt]{extsizes}\n");
-        fprintf(TeX, "\\author{Rusin.AI}\n");
+        fprintf(TeX, "\\author{Rusin.AI@phystech.edu}\n");
         fprintf(TeX, "\\title{Differentiations}\n");
         fprintf(TeX, "\\date{\\today}\n");
         fprintf(TeX, "\\begin{document}\n");
@@ -83,17 +139,17 @@ struct Diff_Tree : Tree<uni_data> {
 
     void put_tex_rec(node<uni_data>* el, int priority = 0) {
 
-        if (el->type_ == 0) {
+        if (el->type_ == type::num) {
             fprintf(TeX, " %g ", el->data_.value_);
             return;
         }
 
-        if (el->type_ == 2) {
+        if (el->type_ == type::var) {
             fprintf(TeX, " %c ", el->data_.var_);
             return;
         }
 
-        if (el->type_ == 3) {
+        if (el->type_ == type::constt) {
             if (el->data_.var_ == 'e')
                 fprintf(TeX, " e ");
             if (el->data_.var_ == 'p')
@@ -101,11 +157,14 @@ struct Diff_Tree : Tree<uni_data> {
             return;
         }
 
-        if (el->type_ == 1) {
+        if (el->type_ == type::func) {
 
             int c = el->data_.func_num_;
 
-            if (el->left_ && c != div_ && c != log_)
+            if ((c == add_ || c == sub_) && priority)
+                fprintf(TeX, "(");
+
+            if (el->left_ && c != div_ && c != log_ && c != mul_)
                 put_tex_rec(el->left_, (3 <= el->data_.func_num_ && el->data_.func_num_ <= 4) ? 1 : 0);
 
             switch (el->data_.func_num_) {
@@ -116,7 +175,13 @@ struct Diff_Tree : Tree<uni_data> {
                     fprintf(TeX, "-");
                     break;
                 case mul_:
-                    fprintf(TeX, " \\cdot ");
+                    if (el->left_->type_ == type::num && is_zero(el->left_->data_.value_ + 1)) {
+                        fprintf(TeX, " -");
+                    } else {
+                        put_tex_rec(el->left_, 1);
+                        fprintf(TeX, " \\cdot ");
+                    }
+
                     break;
                 case div_:
                     fprintf(TeX, "\\frac{");
@@ -163,22 +228,42 @@ struct Diff_Tree : Tree<uni_data> {
 
             put_tex_rec(el->right_, (3 <= el->data_.func_num_ && el->data_.func_num_ <= 4) ? 1 : 0);
 
+            if ((c == add_ || c == sub_) && priority)
+                fprintf(TeX, ")");
         }
 
     }
 
-    void put_tex(node<uni_data>* el) {
+    void put_tex(node<uni_data>* el, int d = 0) {
+        if (stop_tex)
+            return;
+
         fprintf(TeX, "$ ");
 
+        if (d)
+            fprintf(TeX, "(");
         put_tex_rec(el);
+        if (d)
+            fprintf(TeX, ")'");
 
         fprintf(TeX, " $\n\n");
     }
 
     void tex_section(const char* s) {
+        if (stop_tex)
+            return;
         fprintf(TeX, "\\section{");
         fprintf(TeX, s);
         fprintf(TeX, "}\n\n");
+    }
+
+    void tex(const char* s, int same_str = 0) {
+        if (stop_tex)
+            return;
+        if (!same_str)
+            fprintf(TeX, "\\par ");
+        fprintf(TeX, s);
+        fprintf(TeX, "\n");
     }
 
     char* skip_spaces(char* buff) {
@@ -191,7 +276,7 @@ struct Diff_Tree : Tree<uni_data> {
         assert(el != nullptr);
         assert(buff != nullptr);
 
-        cout << "new _ node" << endl;
+//        cout << "new _ node" << endl;
 
         buff = skip_spaces(buff);
 
@@ -210,8 +295,6 @@ struct Diff_Tree : Tree<uni_data> {
 
         sscanf(buff, "%[^ ()]%n", str_buff, &n);
         buff += n;
-
-        w(str_buff);
 
         if (strcmp(str_buff, "+") == 0) {
 
@@ -245,7 +328,7 @@ struct Diff_Tree : Tree<uni_data> {
 
             (*el)->data_.func_num_ = ln_;
 
-        } else if (strcmp(str_buff, "pow") == 0) {
+        } else if (strcmp(str_buff, "^") == 0) {
 
             (*el)->data_.func_num_ = pow_;
 
@@ -255,22 +338,22 @@ struct Diff_Tree : Tree<uni_data> {
 
         } else if (strcmp(str_buff, "e") == 0 || strcmp(str_buff, "E") == 0) {
 
-            (*el)->type_ = 3;
+            (*el)->type_ = type::constt;
             (*el)->data_.var_ = 'e';
 
         } else if (strcmp(str_buff, "pi") == 0 || strcmp(str_buff, "Pi") == 0 || strcmp(str_buff, "PI") == 0) {
 
-            (*el)->type_ = 3;
+            (*el)->type_ = type::constt;
             (*el)->data_.var_ = 'p';
 
         } else if (strlen(str_buff) == 1 && isalpha(*str_buff)) {
 
-            (*el)->type_ = 2;
+            (*el)->type_ = type::var;
             (*el)->data_.var_ = *str_buff;
 
         } else {
 
-            (*el)->type_ = 0;
+            (*el)->type_ = type::num;
             (*el)->data_.value_ = atof(str_buff);
 
         }
@@ -314,11 +397,11 @@ struct Diff_Tree : Tree<uni_data> {
 
         {  // MAIN CONTENT PRINTING
 
-            if (el->type_ == 0) {
+            if (el->type_ == type::num) {
 
                 fprintf(out, "%lf\n", el->data_.value_);
 
-            } else if (el->type_ == 1) {
+            } else if (el->type_ == type::func) {
 
                 switch (el->data_.func_num_) {
                     case add_:
@@ -353,11 +436,11 @@ struct Diff_Tree : Tree<uni_data> {
                         break;
                 }
 
-            } else if (el->type_ == 2) {
+            } else if (el->type_ == type::var) {
 
                 fprintf(out, "%c\n", el->data_.var_);
 
-            } else { // 3
+            } else { // type::constt
 
                 if (el->data_.var_ == 'e') {
                     fprintf(out, "e\n");
@@ -415,13 +498,20 @@ struct Diff_Tree : Tree<uni_data> {
 
         system("java -jar --illegal-access=warn /Users/alex/plantuml.jar -tsvg /Users/alex/Desktop/pictures/Diff_uml.pu");
         system("open /Users/alex/Desktop/pictures/Diff_uml.svg");
+
+//        system("java -jar --illegal-access=warn /Users/alex/plantuml.jar /Users/alex/Desktop/pictures/Diff_uml.pu");
+//        system("open /Users/alex/Desktop/pictures/Diff_uml.png");
     }
 
     int conv_const_rec(node<uni_data>* el) {
         assert(el);
 
-        if (el->type_ == 1 && el->right_->type_ == 0 && ((el->data_.func_num_ == sin_ ||
-                el->data_.func_num_ == cos_ || el->data_.func_num_ == sqrt_ || el->data_.func_num_ == ln_) || el->right_->type_ == 0)) {
+
+        if (el->type_ == type::func && el->right_->type_ == type::num && ((el->data_.func_num_ == sin_ ||
+                el->data_.func_num_ == cos_ || el->data_.func_num_ == sqrt_ || el->data_.func_num_ == ln_) || el->left_->type_ == type::num)) {
+
+            tex("Попробуем преобразовать....");
+            put_tex(el);
 
             el->type_ = 0;
 
@@ -445,7 +535,7 @@ struct Diff_Tree : Tree<uni_data> {
                     el->data_.value_ = cos(el->right_->data_.value_);
                     break;
                 case log_:
-                    el->data_.value_ = log(el->left_->data_.value_) / log(el->right_->data_.value_);
+                    el->data_.value_ = log(el->right_->data_.value_) / log(el->left_->data_.value_);
                     break;
                 case ln_:
                     el->data_.value_ = log(el->right_->data_.value_);
@@ -465,33 +555,47 @@ struct Diff_Tree : Tree<uni_data> {
             el->left_  = nullptr;
             el->right_ = nullptr;
 
+            tex(hard::content[rand() % hard::size]);
+            put_tex(el);
+
+            tex("------");
+
             return 1;
         }
 
-        if (el->type_ == 1) {
+        node<uni_data>* tmp = nullptr;
+
+        if (el->type_ == type::func) {
 
             switch (el->data_.func_num_) {
                 case add_:
 
-                    if (el->left_->type_ == 0 && is_zero(el->left_->data_.value_)) {
-                        el->type_ = el->right_->type_;
-                        el->data_.value_ = el->right_->data_.value_;
+                    if (el->left_->type_ == type::num && is_zero(el->left_->data_.value_)) {
 
-                        free(el->left_);
+                        tmp = el->right_;
 
-                        el->left_  = el->right_->left_;
-                        el->right_ = el->right_->right_;
+                        *el = *(el->right_);
+
+                        delete tmp;
                         return 1;
                     }
 
-                    if (el->right_->type_ == 0 && is_zero(el->right_->data_.value_)) {
-                        el->type_ = el->right_->type_;
-                        el->data_.value_ = el->left_->data_.value_;
+                    if (el->right_->type_ == type::num && is_zero(el->right_->data_.value_)) {
 
-                        free(el->right_);
+                        tmp = el->left_;
 
-                        el->left_  = el->left_->left_;
-                        el->right_ = el->left_->right_;
+                        *el = *(el->left_);
+
+                        delete tmp;
+                        return 1;
+                    }
+
+                    if (el->left_->type_ >= 2 && el->left_->type_ == el->right_->type_ && el->left_->data_.var_ == el->right_->data_.var_) {
+
+                        el->data_.func_num_ = sub_; // TODO
+                        el->left_->type_ = type::num;
+                        el->left_->data_.value_ = 2.;
+
                         return 1;
                     }
 
@@ -500,6 +604,37 @@ struct Diff_Tree : Tree<uni_data> {
 
                     break;
                 case mul_:
+
+                    if ((el->right_->type_ == type::num && is_zero(el->right_->data_.value_)) ||
+                            (el->left_->type_ == type::num && is_zero(el->left_->data_.value_))) {
+                        free_tree(el->left_);
+                        free_tree(el->right_);
+                        *el = node<uni_data>(0, 0.);
+
+                        return 1;
+                    }
+
+                    if (el->right_->type_ == type::num && is_zero(el->right_->data_.value_ - 1)) {
+                        delete el->right_;
+
+                        node<uni_data>* tmp = el->left_;
+
+                        *el = *(el->left_);
+
+                        delete tmp;
+                        return 1;
+                    }
+
+                    if (el->left_->type_ == type::num && is_zero(el->left_->data_.value_ - 1)) {
+                        delete el->left_;
+
+                        node<uni_data>* tmp = el->right_;
+
+                        *el = *(el->right_);
+
+                        delete tmp;
+                        return 1;
+                    }
 
                     break;
                 case div_:
@@ -535,19 +670,216 @@ struct Diff_Tree : Tree<uni_data> {
 
     }
 
+    int counter(node<uni_data>* el) {
+        int s = 1;
+        if (el->left_)
+            s += counter(el->left_);
+        if (el->right_)
+            s += counter(el->right_);
+        return s;
+    }
+
+    node<uni_data>* create(int type, uni_data val, node<uni_data>* left = nullptr, node<uni_data>* right = nullptr) {
+        return new node<uni_data>(type, val, left, right);
+    }
+
+    node<uni_data>* copy(node<uni_data>* el) {
+        node<uni_data>* new_el = new node<uni_data>(*el);
+        if (el->left_)
+            new_el->left_ = copy(el->left_);
+        if (el->right_)
+            new_el->right_ = copy(el->right_);
+        return new_el;
+    }
+
     void d(node<uni_data>* el) {
         assert(el != nullptr);
 
-        if (el->type_ == 0 || el->type_ == 3) {
-            el->type_ = 0;
-            el->data_.value_ = 0;
+        if (el->type_ == type::num || el->type_ == type::constt || el->type_ == type::var) {
+
+            tex("Попробуем преобразовать....");
+            put_tex(el, 1);
+
+            el->type_ = type::num;
+
+            if (el->data_.var_ == diff_by) {
+                el->data_.value_ = 1.;
+            } else {
+                el->data_.value_ = 0.;
+            }
+
+            tex(hard::content[rand() % hard::size]);
+            put_tex(el);
+
+            tex("------");
+
             return;
         }
 
-        if ()
+        assert(el->type_ == type::func);
+
+        node<uni_data>* tmp = nullptr;
+
+        if (print_tex == nullptr && counter(el) >= 5) {
+            tex("Попробуем преобразовать....");
+            put_tex(el, 1);
+            print_tex = el;
+            stop_tex = true;
+        }
+
+        switch (el->data_.func_num_) {
+            case add_:
+                d(el->left_);
+                d(el->right_);
+                break;
+
+            case sub_:
+                d(el->left_);
+                d(el->right_);
+                break;
+
+            case mul_:
+
+                tmp = ADD(MUL(     el->left_,       el->right_),
+                          MUL(copy(el->left_), copy(el->right_)));
+
+                *el = *tmp;
+
+                delete tmp;
+
+                d(el->left_->left_);
+                d(el->right_->right_);
+
+                break;
+
+            case div_:
+
+                tmp = DIV(SUB(MUL(el->left_, el->right_), MUL(copy(el->left_), copy(el->right_))),
+                        //-----------------------------------------------------------------------
+                          POW(copy(el->right_), create(0, 2.)));
+
+                *el = *tmp;
+
+                delete tmp;
+
+                d(el->left_->left_->left_);
+                d(el->left_->right_->right_);
+
+                break;
+
+            case sin_:
+
+                tmp = MUL(COS(copy(el->right_)), el->right_);
+
+                *el = *tmp;
+
+                delete tmp;
+
+                d(el->right_);
+
+                break;
+
+            case cos_:
+
+                tmp = MUL(MUL(create(0, -1.), SIN(copy(el->right_))), el->right_);
+
+                *el = *tmp;
+
+                delete tmp;
+
+                d(el->right_);
+
+                break;
+
+            case log_:
+
+                tmp = DIV(copy(el->right_), MUL(el->right_, LN(el->left_)));
+
+                *el = *tmp;
+
+                delete tmp;
+
+                d(el->left_);
+
+                break;
+
+            case ln_:
+
+                tmp = DIV(copy(el->right_), el->right_);
+
+                *el = *tmp;
+
+                delete tmp;
+
+                d(el->left_);
+
+                break;
+
+            case pow_:
+
+                tmp = MUL(ADD(MUL(DIV(create(0, 1.), copy(el->left_)), MUL(copy(el->left_), copy(el->right_))), MUL(LN(copy(el->left_)), copy(el->right_))), POW(el->left_, el->right_));
+
+                *el = *tmp;
+
+                delete tmp;
+
+                d(el->left_->left_->right_->left_);
+                d(el->left_->right_->right_);
+
+                break;
+
+            case sqrt_:
+
+                tmp = DIV(copy(el->right_), MUL(create(0, 2.), SQRT(el->right_)));
+
+                *el = *tmp;
+
+                delete tmp;
+
+                d(el->left_);
+
+                break;
+        }
+
+        if (print_tex == el) {
+            stop_tex = false;
+            tex(easy::content[rand() % easy::size]);
+            put_tex(el);
+            tex("------");
+        }
 
     }
 
+    void send_email(const char* email) {
+
+        char* s1 = concat("mail ", email);
+        char* s2 = concat(s1, " -r Rusin.AI@phystech.edu -A /Users/alex/Desktop/Clion/Differentiator/cmake-build-debug/Diff.pdf < /Users/alex/Desktop/text_for_email.txt");
+
+        free(s1);
+
+        system(s2);
+
+        free(s2);
+    }
+
+    void put_var_rec(node<uni_data>* el, char var, double value) {
+
+        if (el->type_ == type::var && el->data_.var_ == var) {
+            el->type_ = type::num;
+            el->data_.value_ = value;
+            return;
+        }
+
+        if (el->left_)
+            put_var_rec(el->left_, var, value);
+
+        if (el->right_)
+            put_var_rec(el->right_, var, value);
+    }
+
+    void put_var(char var, double value) {
+        put_var_rec(head_, var, value);
+    }
 };
 
 
